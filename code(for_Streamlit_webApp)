@@ -1,0 +1,87 @@
+import os
+import zipfile
+import string
+import re
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from nltk.corpus import stopwords
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from transformers import pipeline
+import streamlit as st
+
+# Manually define stopwords (if you prefer avoiding nltk)
+stopwords_set = set([
+    "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours", "yourself", "yourselves",
+    "he", "him", "his", "himself", "she", "her", "hers", "herself", "it", "its", "itself", "they", "them", "their",
+    "theirs", "themselves", "what", "which", "who", "whom", "this", "that", "these", "those", "am", "is", "are", "was",
+    "were", "be", "been", "being", "have", "has", "had", "having", "do", "does", "did", "doing", "a", "an", "the", "and",
+    "but", "if", "or", "because", "as", "until", "while", "of", "at", "by", "for", "with", "about", "against", "between",
+    "into", "through", "during", "before", "after", "above", "below", "to", "from", "up", "down", "in", "out", "on",
+    "off", "over", "under", "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all",
+    "any", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same",
+    "so", "than", "too", "very", "s", "t", "can", "will", "just", "don", "should", "now", "d", "ll", "m", "o", "re",
+    "ve", "y", "ain", "aren", "couldn", "didn", "doesn", "hadn", "hasn", "haven", "isn", "ma", "mightn", "mustn", "needn",
+    "shan", "shouldn", "wasn", "weren", "won", "wouldn"
+])
+
+# Tokenizer function
+def custom_tokenize(text):
+    text = str(text).lower()  # Convert to lowercase
+    text = text.translate(str.maketrans('', '', string.punctuation))  # Remove punctuation
+    text = re.sub(r'\d+', '', text)  # Remove numbers
+    tokens = text.split()  # Split by spaces (instead of using word_tokenize)
+    tokens = [word for word in tokens if word not in stopwords_set]  # Remove stopwords
+    return tokens
+
+# Simple Lemmatization (basic rule-based)
+def simple_lemmatize(word):
+    if word.endswith("ing"):
+        return word[:-3]
+    elif word.endswith("es"):
+        return word[:-2]
+    return word
+
+# Clean text function
+def clean_text(text):
+    tokens = custom_tokenize(text)
+    tokens = [simple_lemmatize(word) for word in tokens]  # Lemmatize the tokens
+    return ' '.join(tokens)
+
+# Load dataset
+data = pd.read_csv("C:/Users/yuvra/OneDrive/Documents/AI project/train.csv")
+
+# Clean the text data
+data['Context'] = data['Context'].apply(clean_text)
+
+# Emotion detection model from HuggingFace
+emotion_model = pipeline('sentiment-analysis', model='j-hartmann/emotion-english-distilroberta-base', device=0)
+data['Detected_Emotion'] = data['Context'].apply(lambda x: emotion_model(x)[0]['label'])
+
+# TF-IDF Vectorizer
+vectorizer = TfidfVectorizer()
+tfidf_matrix = vectorizer.fit_transform(data['Context'])
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(tfidf_matrix, data['Detected_Emotion'], test_size=0.3, random_state=42)
+
+# Model creation (Random Forest Classifier)
+model = RandomForestClassifier()
+model.fit(X_train, y_train)
+
+# Streamlit Web Application
+st.title('Emotion Detection from Text')
+
+# Input text box
+input_text = st.text_area("Enter your text for emotion detection:")
+
+if st.button('Detect Emotion'):
+    if input_text:
+        cleaned_input_text = clean_text(input_text)
+        input_tfidf = vectorizer.transform([cleaned_input_text])
+        predicted_emotion = model.predict(input_tfidf)
+        st.write(f"Predicted Emotion: {predicted_emotion[0]}")
+    else:
+        st.write("Please enter some text to detect emotion.")
